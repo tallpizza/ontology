@@ -111,6 +111,11 @@ const platform: Platform = {
 }
 
 const defaultUrl = iife(() => {
+  if (import.meta.env.DEV) {
+    const host = import.meta.env.VITE_OPENCODE_SERVER_HOST
+    const port = import.meta.env.VITE_OPENCODE_SERVER_PORT
+    if (host || port) return `http://${host ?? "localhost"}:${port ?? "4096"}`
+  }
   const lsDefault = readDefaultServerUrl()
   if (lsDefault) return lsDefault
   if (location.hostname.includes("opencode.ai")) return "http://localhost:4096"

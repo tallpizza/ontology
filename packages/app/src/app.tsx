@@ -22,6 +22,7 @@ import { NotificationProvider } from "@/context/notification"
 import { PermissionProvider } from "@/context/permission"
 import { usePlatform } from "@/context/platform"
 import { PromptProvider } from "@/context/prompt"
+import { OntologyProvider } from "@/context/ontology"
 import { type ServerConnection, ServerProvider, useServer } from "@/context/server"
 import { SettingsProvider } from "@/context/settings"
 import { TerminalProvider } from "@/context/terminal"
@@ -78,7 +79,9 @@ function AppShellProviders(props: ParentProps) {
             <ModelsProvider>
               <CommandProvider>
                 <HighlightsProvider>
-                  <Layout>{props.children}</Layout>
+                  <OntologyProvider>
+                    <Layout>{props.children}</Layout>
+                  </OntologyProvider>
                 </HighlightsProvider>
               </CommandProvider>
             </ModelsProvider>

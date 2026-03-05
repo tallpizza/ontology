@@ -1,4 +1,4 @@
-import { createEffect, createMemo, Match, on, onCleanup, Switch } from "solid-js"
+import { createEffect, createMemo, For, Match, on, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { useParams } from "@solidjs/router"
@@ -17,6 +17,7 @@ import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange
 import { useComments } from "@/context/comments"
 import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
+import { useOntology } from "@/context/ontology"
 import { getSessionHandoff } from "@/pages/session/handoff"
 
 function FileCommentMenu(props: {
@@ -59,6 +60,7 @@ export function FileTabContent(props: { tab: string }) {
   const comments = useComments()
   const language = useLanguage()
   const prompt = usePrompt()
+  const ontology = useOntology()
   const fileComponent = useFileComponent()
 
   const sessionKey = createMemo(() => `${params.dir}${params.id ? "/" + params.id : ""}`)
@@ -446,6 +448,39 @@ export function FileTabContent(props: { tab: string }) {
     </div>
   )
 
+  const renderGraph = () => {
+    const data = ontology.graph()
+    return (
+      <div class="px-4 py-3 pb-20">
+        <div class="mb-3 flex items-center justify-between">
+          <div class="text-12-medium text-text-base">Ontology Graph</div>
+          <div class="text-11 text-text-weak">space: {ontology.spaceID()}</div>
+        </div>
+        <Show when={!ontology.error()} fallback={<div class="rounded-md border border-danger-base/40 bg-danger-surface px-3 py-2 text-12-regular text-danger-base">{ontology.error()}</div>}>
+          <Show when={!ontology.loading()} fallback={<div class="text-12-regular text-text-weak">Loading graph...</div>}>
+            <div class="grid grid-cols-2 gap-2 mb-3">
+              <div class="rounded-md border border-border-weak-base px-2 py-1.5 text-11 text-text-weak">Nodes: {data.nodes.length}</div>
+              <div class="rounded-md border border-border-weak-base px-2 py-1.5 text-11 text-text-weak">Links: {data.links.length}</div>
+            </div>
+            <div class="rounded-md border border-border-weak-base">
+              <div class="border-b border-border-weak-base px-2 py-1.5 text-11 text-text-weak">Recent Nodes</div>
+              <div class="max-h-[260px] overflow-y-auto">
+                <For each={data.nodes.slice(0, 80)}>
+                  {(node) => (
+                    <div class="border-b border-border-weak-base/60 px-2 py-1.5 text-12-regular last:border-b-0">
+                      <div class="truncate text-text-base">{node.label ?? "Entity"}: {node.name ?? node.id}</div>
+                      <div class="truncate text-11 text-text-weak">{node.sourceSystem ?? "unknown"} / {node.sourceRef ?? "unknown"}</div>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </div>
+          </Show>
+        </Show>
+      </div>
+    )
+  }
+
   return (
     <Tabs.Content value={props.tab} class="mt-3 relative h-full">
       <ScrollView
@@ -457,7 +492,7 @@ export function FileTabContent(props: { tab: string }) {
         onScroll={handleScroll as any}
       >
         <Switch>
-          <Match when={state()?.loaded}>{renderFile(contents())}</Match>
+          <Match when={true}>{renderGraph()}</Match>
           <Match when={state()?.loading}>
             <div class="px-6 py-4 text-text-weak">{language.t("common.loading")}...</div>
           </Match>

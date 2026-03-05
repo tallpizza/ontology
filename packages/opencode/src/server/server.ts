@@ -41,6 +41,7 @@ import { errors } from "./error"
 import { QuestionRoutes } from "./routes/question"
 import { PermissionRoutes } from "./routes/permission"
 import { GlobalRoutes } from "./routes/global"
+import { OntologyRoutes, init as initOntology, shutdown as shutdownOntology } from "./routes/ontology-native"
 import { MDNS } from "./mdns"
 
 // @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
@@ -250,6 +251,7 @@ export namespace Server {
         .route("/permission", PermissionRoutes())
         .route("/question", QuestionRoutes())
         .route("/provider", ProviderRoutes())
+        .route("/ontology", OntologyRoutes())
         .route("/", FileRoutes())
         .route("/mcp", McpRoutes())
         .route("/tui", TuiRoutes())
@@ -591,7 +593,7 @@ export namespace Server {
     return result
   }
 
-  export function listen(opts: {
+  export async function listen(opts: {
     port: number
     hostname: string
     mdns?: boolean
@@ -599,6 +601,14 @@ export namespace Server {
     cors?: string[]
   }) {
     _corsWhitelist = opts.cors ?? []
+
+    // Initialize ontology data layer (Neo4j + SQLite)
+    try {
+      await initOntology()
+      log.info("ontology initialized")
+    } catch (e) {
+      log.warn("ontology init failed — graph features unavailable", { error: e instanceof Error ? e.message : String(e) })
+    }
 
     const args = {
       hostname: opts.hostname,
@@ -630,9 +640,17 @@ export namespace Server {
       log.warn("mDNS enabled but hostname is loopback; skipping mDNS publish")
     }
 
+    // Graceful shutdown: close ontology connections
+    const cleanup = async () => {
+      await shutdownOntology()
+    }
+    process.on("SIGINT", cleanup)
+    process.on("SIGTERM", cleanup)
+
     const originalStop = server.stop.bind(server)
     server.stop = async (closeActiveConnections?: boolean) => {
       if (shouldPublishMDNS) MDNS.unpublish()
+      await shutdownOntology()
       return originalStop(closeActiveConnections)
     }
 

@@ -6,7 +6,6 @@ import { Tabs } from "@opencode-ai/ui/tabs"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
-import { Mark } from "@opencode-ai/ui/logo"
 import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
@@ -21,6 +20,7 @@ import { useFile, type SelectedLineRange } from "@/context/file"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
 import { useSync } from "@/context/sync"
+import { useOntology } from "@/context/ontology"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { FileTabContent } from "@/pages/session/file-tabs"
 import { createOpenSessionFileTab, getTabReorderIndex } from "@/pages/session/helpers"
@@ -39,6 +39,7 @@ export function SessionSidePanel(props: {
   const language = useLanguage()
   const command = useCommand()
   const dialog = useDialog()
+  const ontology = useOntology()
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const sessionKey = createMemo(() => `${params.dir}${params.id ? "/" + params.id : ""}`)
@@ -134,7 +135,7 @@ export function SessionSidePanel(props: {
   const fileTreeTab = () => layout.fileTree.tab()
 
   const setFileTreeTabValue = (value: string) => {
-    if (value !== "changes" && value !== "all") return
+    if (value !== "changes" && value !== "all" && value !== "spaces") return
     layout.fileTree.setTab(value)
   }
 
@@ -179,6 +180,11 @@ export function SessionSidePanel(props: {
   createEffect(() => {
     if (!layout.fileTree.opened()) return
     syncFileTreeScrolled(fileTreeTab() === "changes" ? changesEl : allEl)
+  })
+
+  createEffect(() => {
+    if (!params.id) return
+    void ontology.refresh()
   })
 
   createEffect(() => {
@@ -294,20 +300,15 @@ export function SessionSidePanel(props: {
 
                 <Show when={reviewTab()}>
                   <Tabs.Content value="review" class="flex flex-col h-full overflow-hidden contain-strict">
-                    <Show when={activeTab() === "review"}>{props.reviewPanel()}</Show>
+                    <Show when={activeTab() === "review"}>
+                      <OntologyGraphPanel />
+                    </Show>
                   </Tabs.Content>
                 </Show>
 
                 <Tabs.Content value="empty" class="flex flex-col h-full overflow-hidden contain-strict">
                   <Show when={activeTab() === "empty"}>
-                    <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
-                      <div class="h-full px-6 pb-42 flex flex-col items-center justify-center text-center gap-6">
-                        <Mark class="w-14 opacity-10" />
-                        <div class="text-14-regular text-text-weak max-w-56">
-                          {language.t("session.files.selectToOpen")}
-                        </div>
-                      </div>
-                    </div>
+                    <OntologyGraphPanel />
                   </Show>
                 </Tabs.Content>
 
@@ -362,6 +363,9 @@ export function SessionSidePanel(props: {
                   <Tabs.Trigger value="all" class="flex-1" classes={{ button: "w-full" }}>
                     {language.t("session.files.all")}
                   </Tabs.Trigger>
+                  <Tabs.Trigger value="spaces" class="flex-1" classes={{ button: "w-full" }}>
+                    Spaces
+                  </Tabs.Trigger>
                 </Tabs.List>
                 <Tabs.Content
                   value="changes"
@@ -410,6 +414,32 @@ export function SessionSidePanel(props: {
                     onFileClick={(node) => openTab(file.tab(node.path))}
                   />
                 </Tabs.Content>
+                <Tabs.Content value="spaces" class="bg-background-stronger px-3 py-2 overflow-y-auto">
+                  <Show when={!ontology.error()} fallback={<div class="px-2 py-2 text-12-regular text-danger-base">{ontology.error()}</div>}>
+                    <Show when={!ontology.loading()} fallback={<div class="px-2 py-2 text-12-regular text-text-weak">Loading spaces...</div>}>
+                      <div class="flex flex-col gap-1.5">
+                        <For each={ontology.spaces().length ? ontology.spaces() : [{ id: ontology.spaceID(), nodeCount: 0 }]}> 
+                          {(space) => (
+                            <button
+                              type="button"
+                              class="w-full rounded-md border border-border-weak-base px-2 py-1.5 text-left text-12-regular hover:bg-background-surface"
+                              classList={{
+                                "bg-background-surface text-text-base": ontology.spaceID() === space.id,
+                                "text-text-weak": ontology.spaceID() !== space.id,
+                              }}
+                              onClick={() => void ontology.selectSpace(space.id)}
+                            >
+                              <div class="flex items-center justify-between gap-2">
+                                <span class="truncate">{space.id}</span>
+                                <span class="text-11">{space.nodeCount}</span>
+                              </div>
+                            </button>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
+                  </Show>
+                </Tabs.Content>
               </Tabs>
             </div>
             <ResizeHandle
@@ -426,5 +456,57 @@ export function SessionSidePanel(props: {
         </Show>
       </aside>
     </Show>
+  )
+}
+
+
+function OntologyGraphPanel() {
+  const ontology = useOntology()
+  const data = createMemo(() => ontology.graph())
+
+  return (
+    <div class="relative pt-2 flex-1 min-h-0 overflow-y-auto">
+      <div class="px-4 py-3 pb-20">
+        <div class="mb-3 flex items-center justify-between">
+          <div class="text-12-medium text-text-base">Ontology Graph</div>
+          <div class="text-11 text-text-weak">space: {ontology.spaceID()}</div>
+        </div>
+        <Switch>
+          <Match when={ontology.error()}>
+            <div class="rounded-md border border-danger-base/40 bg-danger-surface px-3 py-2 text-12-regular text-danger-base">{ontology.error()}</div>
+          </Match>
+          <Match when={ontology.loading()}>
+            <div class="text-12-regular text-text-weak">Loading graph...</div>
+          </Match>
+          <Match when={true}>
+            <div class="grid grid-cols-2 gap-2 mb-3">
+              <div class="rounded-md border border-border-weak-base px-2 py-1.5 text-11 text-text-weak">Nodes: {data().nodes.length}</div>
+              <div class="rounded-md border border-border-weak-base px-2 py-1.5 text-11 text-text-weak">Links: {data().links.length}</div>
+            </div>
+            <Show when={data().nodes.length > 0}>
+              <div class="rounded-md border border-border-weak-base">
+                <div class="border-b border-border-weak-base px-2 py-1.5 text-11 text-text-weak">Recent Nodes</div>
+                <div class="max-h-[calc(100vh-260px)] overflow-y-auto">
+                  <For each={data().nodes.slice(0, 100)}>
+                    {(node) => (
+                      <div class="border-b border-border-weak-base/60 px-2 py-1.5 text-12-regular last:border-b-0">
+                        <div class="truncate text-text-base">{node.label ?? "Entity"}: {node.name ?? node.id}</div>
+                        <div class="truncate text-11 text-text-weak">{node.sourceSystem ?? "unknown"} / {node.sourceRef ?? "unknown"}</div>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </div>
+            </Show>
+            <Show when={data().nodes.length === 0}>
+              <div class="text-center py-8 text-12-regular text-text-weak">
+                <div class="mb-1">No nodes in this space</div>
+                <div class="text-11">Use the chat to create ontology nodes</div>
+              </div>
+            </Show>
+          </Match>
+        </Switch>
+      </div>
+    </div>
   )
 }

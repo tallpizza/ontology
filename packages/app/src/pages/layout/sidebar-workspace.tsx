@@ -16,8 +16,9 @@ import { type Session } from "@opencode-ai/sdk/v2/client"
 import { type LocalProject } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
-import { NewSessionItem, SessionItem, SessionSkeleton } from "./sidebar-items"
-import { childMapByParent, sortedRootSessions } from "./helpers"
+import { useOntology } from "@/context/ontology"
+import { NewSessionItem, SessionSkeleton } from "./sidebar-items"
+import { sortedRootSessions } from "./helpers"
 
 type InlineEditorComponent = (props: {
   id: string
@@ -243,11 +244,6 @@ const WorkspaceSessionList = (props: {
   ctx: WorkspaceSidebarContext
   showNew: Accessor<boolean>
   loading: Accessor<boolean>
-  sessions: Accessor<Session[]>
-  children: Accessor<Map<string, string[]>>
-  hasMore: Accessor<boolean>
-  loadMore: () => Promise<void>
-  language: ReturnType<typeof useLanguage>
 }): JSX.Element => (
   <nav class="flex flex-col gap-1 px-2">
     <Show when={props.showNew()}>
@@ -262,41 +258,42 @@ const WorkspaceSessionList = (props: {
     <Show when={props.loading()}>
       <SessionSkeleton />
     </Show>
-    <For each={props.sessions()}>
-      {(session) => (
-        <SessionItem
-          session={session}
-          slug={props.slug()}
-          mobile={props.mobile}
-          children={props.children()}
-          sidebarExpanded={props.ctx.sidebarExpanded}
-          sidebarHovering={props.ctx.sidebarHovering}
-          nav={props.ctx.nav}
-          hoverSession={props.ctx.hoverSession}
-          setHoverSession={props.ctx.setHoverSession}
-          clearHoverProjectSoon={props.ctx.clearHoverProjectSoon}
-          prefetchSession={props.ctx.prefetchSession}
-          archiveSession={props.ctx.archiveSession}
-        />
-      )}
-    </For>
-    <Show when={props.hasMore()}>
-      <div class="relative w-full py-1">
-        <Button
-          variant="ghost"
-          class="flex w-full text-left justify-start text-14-regular text-text-weak pl-9 pr-10"
-          size="large"
-          onClick={(e: MouseEvent) => {
-            props.loadMore()
-            ;(e.currentTarget as HTMLButtonElement).blur()
-          }}
-        >
-          {props.language.t("common.loadMore")}
-        </Button>
-      </div>
-    </Show>
+    <SidebarSpaceList slug={props.slug} />
   </nav>
 )
+
+const SidebarSpaceList = (props: { slug: Accessor<string> }) => {
+  const ontology = useOntology()
+  const navigate = useNavigate()
+  const params = useParams()
+  const spaces = createMemo(() =>
+    ontology.spaces().length ? ontology.spaces() : [{ id: ontology.spaceID(), nodeCount: 0 }],
+  )
+
+  return (
+    <div class="flex flex-col gap-1">
+      <For each={spaces()}>
+        {(space) => (
+          <button
+            type="button"
+            class="w-full px-3 py-2 rounded-md text-left text-13-regular flex items-center justify-between transition-colors hover:bg-surface-raised-base-hover"
+            classList={{
+              "bg-surface-base-active text-text-strong": ontology.spaceID() === space.id,
+              "text-text-weak": ontology.spaceID() !== space.id,
+            }}
+            onClick={() => {
+              void ontology.selectSpace(space.id)
+              if (!params.id) navigate(`/${props.slug()}/session`)
+            }}
+          >
+            <span class="truncate">{space.id}</span>
+            <span class="text-11">{space.nodeCount}</span>
+          </button>
+        )}
+      </For>
+    </div>
+  )
+}
 
 export const SortableWorkspace = (props: {
   ctx: WorkspaceSidebarContext
@@ -316,8 +313,6 @@ export const SortableWorkspace = (props: {
     pendingRename: false,
   })
   const slug = createMemo(() => base64Encode(props.directory))
-  const sessions = createMemo(() => sortedRootSessions(workspaceStore, props.sortNow()))
-  const children = createMemo(() => childMapByParent(workspaceStore.session))
   const local = createMemo(() => props.directory === props.project.worktree)
   const active = createMemo(() => props.ctx.currentDir() === props.directory)
   const workspaceValue = createMemo(() => {
@@ -328,16 +323,11 @@ export const SortableWorkspace = (props: {
   const open = createMemo(() => props.ctx.workspaceExpanded(props.directory, local()))
   const boot = createMemo(() => open() || active())
   const booted = createMemo((prev) => prev || workspaceStore.status === "complete", false)
-  const hasMore = createMemo(() => workspaceStore.sessionTotal > sessions().length)
   const busy = createMemo(() => props.ctx.isBusy(props.directory))
   const wasBusy = createMemo((prev) => prev || busy(), false)
-  const loading = createMemo(() => open() && !booted() && sessions().length === 0 && !wasBusy())
+  const loading = createMemo(() => open() && !booted() && !wasBusy())
   const touch = createMediaQuery("(hover: none)")
-  const showNew = createMemo(() => !loading() && (touch() || sessions().length === 0 || (active() && !params.id)))
-  const loadMore = async () => {
-    setWorkspaceStore("limit", (limit) => (limit ?? 0) + 5)
-    await globalSync.project.loadSessions(props.directory)
-  }
+  const showNew = createMemo(() => !loading() && (touch() || (active() && !params.id)))
 
   const workspaceEditActive = createMemo(() => props.ctx.editorOpen(`workspace:${props.directory}`))
 
@@ -450,11 +440,6 @@ export const SortableWorkspace = (props: {
             ctx={props.ctx}
             showNew={showNew}
             loading={loading}
-            sessions={sessions}
-            children={children}
-            hasMore={hasMore}
-            loadMore={loadMore}
-            language={language}
           />
         </Collapsible.Content>
       </Collapsible>
@@ -468,22 +453,7 @@ export const LocalWorkspace = (props: {
   sortNow: Accessor<number>
   mobile?: boolean
 }): JSX.Element => {
-  const globalSync = useGlobalSync()
-  const language = useLanguage()
-  const workspace = createMemo(() => {
-    const [store, setStore] = globalSync.child(props.project.worktree)
-    return { store, setStore }
-  })
   const slug = createMemo(() => base64Encode(props.project.worktree))
-  const sessions = createMemo(() => sortedRootSessions(workspace().store, props.sortNow()))
-  const children = createMemo(() => childMapByParent(workspace().store.session))
-  const booted = createMemo((prev) => prev || workspace().store.status === "complete", false)
-  const loading = createMemo(() => !booted() && sessions().length === 0)
-  const hasMore = createMemo(() => workspace().store.sessionTotal > sessions().length)
-  const loadMore = async () => {
-    workspace().setStore("limit", (limit) => (limit ?? 0) + 5)
-    await globalSync.project.loadSessions(props.project.worktree)
-  }
 
   return (
     <div
@@ -491,42 +461,7 @@ export const LocalWorkspace = (props: {
       class="size-full flex flex-col py-2 overflow-y-auto no-scrollbar [overflow-anchor:none]"
     >
       <nav class="flex flex-col gap-1 px-2">
-        <Show when={loading()}>
-          <SessionSkeleton />
-        </Show>
-        <For each={sessions()}>
-          {(session) => (
-            <SessionItem
-              session={session}
-              slug={slug()}
-              mobile={props.mobile}
-              children={children()}
-              sidebarExpanded={props.ctx.sidebarExpanded}
-              sidebarHovering={props.ctx.sidebarHovering}
-              nav={props.ctx.nav}
-              hoverSession={props.ctx.hoverSession}
-              setHoverSession={props.ctx.setHoverSession}
-              clearHoverProjectSoon={props.ctx.clearHoverProjectSoon}
-              prefetchSession={props.ctx.prefetchSession}
-              archiveSession={props.ctx.archiveSession}
-            />
-          )}
-        </For>
-        <Show when={hasMore()}>
-          <div class="relative w-full py-1">
-            <Button
-              variant="ghost"
-              class="flex w-full text-left justify-start text-14-regular text-text-weak pl-9 pr-10"
-              size="large"
-              onClick={(e: MouseEvent) => {
-                loadMore()
-                ;(e.currentTarget as HTMLButtonElement).blur()
-              }}
-            >
-              {language.t("common.loadMore")}
-            </Button>
-          </div>
-        </Show>
+        <SidebarSpaceList slug={slug} />
       </nav>
     </div>
   )
