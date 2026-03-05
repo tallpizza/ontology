@@ -30,9 +30,7 @@ export function SessionMobileTabs(props: {
             classes={{ button: "w-full" }}
             onClick={props.onChanges}
           >
-            {props.hasReview
-              ? language.t("session.review.filesChanged", { count: props.reviewCount })
-              : language.t("session.review.change.other")}
+            Graph
           </Tabs.Trigger>
         </Tabs.List>
       </Tabs>
