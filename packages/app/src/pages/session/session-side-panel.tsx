@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { useParams } from "@solidjs/router"
@@ -463,50 +463,155 @@ export function SessionSidePanel(props: {
 function OntologyGraphPanel() {
   const ontology = useOntology()
   const data = createMemo(() => ontology.graph())
+  let containerRef: HTMLDivElement | undefined
+  let graphInstance: any
+  const [viewport, setViewport] = createSignal({ width: 0, height: 0 })
+
+  // Label colors by label type
+  const labelColors: Record<string, string> = {}
+  const palette = ["#6366f1", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"]
+  let colorIdx = 0
+  const getColor = (label: string) => {
+    if (!labelColors[label]) {
+      labelColors[label] = palette[colorIdx % palette.length]
+      colorIdx++
+    }
+    return labelColors[label]
+  }
+
+  const mountGraph = async () => {
+    const el = containerRef
+    if (!el || viewport().width <= 0 || viewport().height <= 0) return
+
+    if (graphInstance?._destructor) {
+      graphInstance._destructor()
+      graphInstance = undefined
+    }
+
+    try {
+      const mod = await import("force-graph")
+      const ForceGraphFactory = mod.default as any
+      const fg = ForceGraphFactory()(el) as any
+      fg.width(viewport().width)
+        .height(viewport().height)
+        .backgroundColor("transparent")
+        .nodeLabel((node: any) => {
+          const n = node as { name?: string; label?: string; sourceSystem?: string; sourceRef?: string }
+          return `<div style="font-size:11px;padding:4px 8px;background:rgba(0,0,0,0.85);color:#fff;border-radius:6px;max-width:240px">
+            <div><b>${n.label ?? "Entity"}</b>: ${n.name ?? "?"}</div>
+            <div style="opacity:0.7;margin-top:2px">${n.sourceSystem ?? "?"} / ${n.sourceRef ?? "?"}</div>
+          </div>`
+        })
+        .nodeCanvasObject((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+          const label = node.name ?? node.id ?? ""
+          const nodeLabel = node.label ?? "Entity"
+          const fontSize = Math.max(10 / globalScale, 2)
+          const nodeRadius = Math.max(5, 3 + (node.val ?? 1))
+          const color = getColor(nodeLabel)
+
+          // Node circle
+          ctx.beginPath()
+          ctx.arc(node.x!, node.y!, nodeRadius, 0, 2 * Math.PI)
+          ctx.fillStyle = color
+          ctx.fill()
+          ctx.strokeStyle = "rgba(255,255,255,0.3)"
+          ctx.lineWidth = 1 / globalScale
+          ctx.stroke()
+
+          // Label text
+          if (globalScale > 0.6) {
+            ctx.font = `${fontSize}px sans-serif`
+            ctx.textAlign = "center"
+            ctx.textBaseline = "top"
+            ctx.fillStyle = "rgba(200,200,200,0.9)"
+            ctx.fillText(label, node.x!, node.y! + nodeRadius + 2 / globalScale)
+          }
+        })
+        .nodePointerAreaPaint((node: any, color: string, ctx: CanvasRenderingContext2D) => {
+          const nodeRadius = Math.max(5, 3 + (node.val ?? 1))
+          ctx.beginPath()
+          ctx.arc(node.x!, node.y!, nodeRadius + 2, 0, 2 * Math.PI)
+          ctx.fillStyle = color
+          ctx.fill()
+        })
+        .linkColor(() => "rgba(100,100,100,0.4)")
+        .linkDirectionalArrowLength(4)
+        .linkDirectionalArrowRelPos(1)
+        .linkLabel((link: any) => link.type ?? "")
+
+      graphInstance = fg
+      fg.graphData({
+        nodes: data().nodes.map((n) => ({ ...n })),
+        links: data().links.map((l) => ({ ...l })),
+      })
+    } catch (e) {
+      console.error("force-graph init failed", e)
+    }
+  }
+
+  onMount(() => {
+    if (!containerRef) return
+    const observer = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect
+      if (!rect) return
+      setViewport({ width: Math.floor(rect.width), height: Math.floor(rect.height) })
+    })
+    observer.observe(containerRef)
+    onCleanup(() => observer.disconnect())
+  })
+
+  // Mount/remount on viewport change
+  createEffect(() => {
+    const v = viewport()
+    if (v.width > 0 && v.height > 0) void mountGraph()
+  })
+
+  // Update data when graph changes
+  createEffect(() => {
+    const d = data()
+    if (!graphInstance) return
+    graphInstance.graphData({
+      nodes: d.nodes.map((n: any) => ({ ...n })),
+      links: d.links.map((l: any) => ({ ...l })),
+    })
+    graphInstance.d3ReheatSimulation?.()
+  })
+
+  onCleanup(() => {
+    graphInstance?._destructor?.()
+    graphInstance = undefined
+  })
 
   return (
-    <div class="relative pt-2 flex-1 min-h-0 overflow-y-auto">
-      <div class="px-4 py-3 pb-20">
-        <div class="mb-3 flex items-center justify-between">
-          <div class="text-12-medium text-text-base">Ontology Graph</div>
+    <div class="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-2 border-b border-border-weak-base">
+        <div class="text-12-medium text-text-base">Ontology Graph</div>
+        <div class="flex items-center gap-2">
+          <div class="text-11 text-text-weak">
+            {data().nodes.length}N / {data().links.length}L
+          </div>
           <div class="text-11 text-text-weak">space: {ontology.spaceID()}</div>
         </div>
-        <Switch>
-          <Match when={ontology.error()}>
-            <div class="rounded-md border border-danger-base/40 bg-danger-surface px-3 py-2 text-12-regular text-danger-base">{ontology.error()}</div>
-          </Match>
-          <Match when={ontology.loading()}>
-            <div class="text-12-regular text-text-weak">Loading graph...</div>
-          </Match>
-          <Match when={true}>
-            <div class="grid grid-cols-2 gap-2 mb-3">
-              <div class="rounded-md border border-border-weak-base px-2 py-1.5 text-11 text-text-weak">Nodes: {data().nodes.length}</div>
-              <div class="rounded-md border border-border-weak-base px-2 py-1.5 text-11 text-text-weak">Links: {data().links.length}</div>
-            </div>
-            <Show when={data().nodes.length > 0}>
-              <div class="rounded-md border border-border-weak-base">
-                <div class="border-b border-border-weak-base px-2 py-1.5 text-11 text-text-weak">Recent Nodes</div>
-                <div class="max-h-[calc(100vh-260px)] overflow-y-auto">
-                  <For each={data().nodes.slice(0, 100)}>
-                    {(node) => (
-                      <div class="border-b border-border-weak-base/60 px-2 py-1.5 text-12-regular last:border-b-0">
-                        <div class="truncate text-text-base">{node.label ?? "Entity"}: {node.name ?? node.id}</div>
-                        <div class="truncate text-11 text-text-weak">{node.sourceSystem ?? "unknown"} / {node.sourceRef ?? "unknown"}</div>
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </div>
-            </Show>
-            <Show when={data().nodes.length === 0}>
-              <div class="text-center py-8 text-12-regular text-text-weak">
-                <div class="mb-1">No nodes in this space</div>
-                <div class="text-11">Use the chat to create ontology nodes</div>
-              </div>
-            </Show>
-          </Match>
-        </Switch>
       </div>
+      <Switch>
+        <Match when={ontology.error()}>
+          <div class="px-4 py-3 text-12-regular text-danger-base">{ontology.error()}</div>
+        </Match>
+        <Match when={ontology.loading()}>
+          <div class="px-4 py-3 text-12-regular text-text-weak">Loading graph...</div>
+        </Match>
+        <Match when={data().nodes.length === 0}>
+          <div class="flex-1 flex items-center justify-center text-12-regular text-text-weak">
+            <div class="text-center">
+              <div class="mb-1">No nodes in this space</div>
+              <div class="text-11">Use the chat to create ontology nodes</div>
+            </div>
+          </div>
+        </Match>
+        <Match when={true}>
+          <div ref={containerRef} class="flex-1 min-h-0" />
+        </Match>
+      </Switch>
     </div>
   )
 }
