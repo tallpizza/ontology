@@ -41,7 +41,7 @@ import { MessageTimeline } from "@/pages/session/message-timeline"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
 import { SessionComposerRegion, createSessionComposerState } from "@/pages/session/composer"
 import { SessionMobileTabs } from "@/pages/session/session-mobile-tabs"
-import { SessionSidePanel } from "@/pages/session/session-side-panel"
+import { SessionSidePanel, OntologyGraphPanel } from "@/pages/session/session-side-panel"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
 
 const emptyUserMessages: UserMessage[] = []
@@ -1188,16 +1188,7 @@ export default function Page() {
                 <Show when={activeMessage()}>
                   <MessageTimeline
                     mobileChanges={mobileChanges()}
-                    mobileFallback={reviewContent({
-                      diffStyle: "unified",
-                      classes: {
-                        root: "pb-8",
-                        header: "px-4",
-                        container: "px-4",
-                      },
-                      loadingClass: "px-4 py-4 text-text-weak",
-                      emptyClass: "h-full pb-30 flex flex-col items-center justify-center text-center gap-6",
-                    })}
+                    mobileFallback={<OntologyGraphPanel />}
                     scroll={ui.scroll}
                     onResumeScroll={resumeScroll}
                     setScrollRef={setScrollRef}

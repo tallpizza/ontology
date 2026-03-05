@@ -460,7 +460,7 @@ export function SessionSidePanel(props: {
 }
 
 
-function OntologyGraphPanel() {
+export function OntologyGraphPanel() {
   const ontology = useOntology()
   const data = createMemo(() => ontology.graph())
   let containerRef: HTMLDivElement | undefined
