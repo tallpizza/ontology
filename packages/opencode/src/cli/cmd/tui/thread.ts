@@ -206,7 +206,6 @@ export const TuiThreadCommand = cmd({
             prompt,
             fork: args.fork,
           },
-          onExit: stop,
         })
       } finally {
         await stop()
