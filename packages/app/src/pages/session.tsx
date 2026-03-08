@@ -324,9 +324,7 @@ export default function Page() {
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
   // Ontology: always show graph panel on desktop
   const desktopSidePanelOpen = createMemo(() => isDesktop())
-  const sessionPanelWidth = createMemo(() =>
-    desktopSidePanelOpen() ? `${layout.session.width()}px` : "100%"
-  )
+  const sessionPanelWidth = createMemo(() => (desktopSidePanelOpen() ? `${layout.session.width()}px` : "100%"))
   const centered = createMemo(() => isDesktop())
 
   function normalizeTab(tab: string) {
@@ -410,6 +408,18 @@ export default function Page() {
     ),
   )
 
+  createEffect(
+    on(
+      () => ({ dir: params.dir, id: params.id }),
+      (next, prev) => {
+        if (!prev) return
+        if (next.dir === prev.dir && next.id === prev.id) return
+        if (prev.id) sync.session.evict(prev.id, prev.dir)
+        if (!next.id) resetSessionModel(local)
+      },
+      { defer: true },
+    ),
+  )
   const [store, setStore] = createStore({
     messageId: undefined as string | undefined,
     mobileTab: "session" as "session" | "changes",
