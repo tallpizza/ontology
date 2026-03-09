@@ -5,28 +5,34 @@ import { type Config } from "./gen/client/types.gen.js"
 import { OpencodeClient } from "./gen/sdk.gen.js"
 export { type Config as OpencodeClientConfig, OpencodeClient }
 
-export function createOpencodeClient(config?: Config & { directory?: string }) {
-  if (!config?.fetch) {
-    const customFetch: any = (req: any) => {
+export function createOpencodeClient(config?: Config & { directory?: string; space?: string }) {
+  const base =
+    config?.fetch ??
+    ((req: Request) => {
       // @ts-ignore
       req.timeout = false
       return fetch(req)
+    })
+
+  const withScope = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const req = new Request(input, init)
+    const directory = config?.directory
+    if (directory) {
+      const encoded = /[^\x00-\x7F]/.test(directory) ? encodeURIComponent(directory) : directory
+      req.headers.set("x-opencode-directory", encoded)
     }
-    config = {
-      ...config,
-      fetch: customFetch,
-    }
+
+    const space =
+      config?.space ??
+      (typeof localStorage === "undefined" ? undefined : (localStorage.getItem("opencode.ontology.space") ?? "default"))
+    if (space) req.headers.set("x-opencode-space", space)
+
+    return base(req)
   }
 
-  if (config?.directory) {
-    const isNonASCII = /[^\x00-\x7F]/.test(config.directory)
-    const encodedDirectory = isNonASCII ? encodeURIComponent(config.directory) : config.directory
-    config.headers = {
-      ...config.headers,
-      "x-opencode-directory": encodedDirectory,
-    }
-  }
-
-  const client = createClient(config)
+  const client = createClient({
+    ...config,
+    fetch: withScope,
+  })
   return new OpencodeClient({ client })
 }

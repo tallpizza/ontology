@@ -22,7 +22,7 @@ import { SessionPrompt } from "./prompt"
 import { fn } from "@/util/fn"
 import { Command } from "../command"
 import { Snapshot } from "@/snapshot"
-import { WorkspaceContext } from "../control-plane/workspace-context"
+import { OntologySpaceContext } from "@/ontology/space-context"
 
 import type { Provider } from "@/provider/provider"
 import { PermissionNext } from "@/permission/next"
@@ -64,7 +64,7 @@ export namespace Session {
       id: row.id,
       slug: row.slug,
       projectID: row.project_id,
-      workspaceID: row.workspace_id ?? undefined,
+      workspaceID: row.workspace_id ?? "default",
       directory: row.directory,
       parentID: row.parent_id ?? undefined,
       title: row.title,
@@ -295,13 +295,52 @@ export namespace Session {
     directory: string
     permission?: PermissionNext.Ruleset
   }) {
+    const workspace = OntologySpaceContext.spaceID ?? "default"
+    if (!input.parentID) {
+      const rows = Database.use((db) =>
+        db
+          .select()
+          .from(SessionTable)
+          .where(
+            and(
+              eq(SessionTable.project_id, Instance.project.id),
+              eq(SessionTable.directory, input.directory),
+              eq(SessionTable.workspace_id, workspace),
+              isNull(SessionTable.parent_id),
+              isNull(SessionTable.time_archived),
+            ),
+          )
+          .orderBy(desc(SessionTable.time_updated))
+          .all(),
+      )
+      if (rows.length) {
+        const time = Date.now()
+        Database.use((db) => {
+          for (const row of rows) {
+            const next = db
+              .update(SessionTable)
+              .set({
+                time_archived: time,
+                time_updated: time,
+              })
+              .where(eq(SessionTable.id, row.id))
+              .returning()
+              .get()
+            if (!next) continue
+            const info = fromRow(next)
+            Database.effect(() => Bus.publish(Event.Updated, { info }))
+          }
+        })
+      }
+    }
+
     const result: Info = {
       id: Identifier.descending("session", input.id),
       slug: Slug.create(),
       version: Installation.VERSION,
       projectID: Instance.project.id,
       directory: input.directory,
-      workspaceID: WorkspaceContext.workspaceID,
+      workspaceID: workspace,
       parentID: input.parentID,
       title: input.title ?? createDefaultTitle(!!input.parentID),
       permission: input.permission,
@@ -541,8 +580,8 @@ export namespace Session {
     const project = Instance.project
     const conditions = [eq(SessionTable.project_id, project.id)]
 
-    if (WorkspaceContext.workspaceID) {
-      conditions.push(eq(SessionTable.workspace_id, WorkspaceContext.workspaceID))
+    if (OntologySpaceContext.spaceID) {
+      conditions.push(eq(SessionTable.workspace_id, OntologySpaceContext.spaceID))
     }
     if (input?.directory) {
       conditions.push(eq(SessionTable.directory, input.directory))

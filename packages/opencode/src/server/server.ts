@@ -22,6 +22,7 @@ import { Flag } from "../flag/flag"
 import { Command } from "../command"
 import { Global } from "../global"
 import { WorkspaceContext } from "../control-plane/workspace-context"
+import { OntologySpaceContext } from "@/ontology/space-context"
 import { WorkspaceRouterMiddleware } from "../control-plane/workspace-router-middleware"
 import { ProjectRoutes } from "./routes/project"
 import { SessionRoutes } from "./routes/session"
@@ -198,6 +199,7 @@ export namespace Server {
         .use(async (c, next) => {
           if (c.req.path === "/log") return next()
           const workspaceID = c.req.query("workspace") || c.req.header("x-opencode-workspace")
+          const spaceID = c.req.query("space") || c.req.header("x-opencode-space")
           const raw = c.req.query("directory") || c.req.header("x-opencode-directory") || process.cwd()
           const directory = (() => {
             try {
@@ -210,11 +212,16 @@ export namespace Server {
           return WorkspaceContext.provide({
             workspaceID,
             async fn() {
-              return Instance.provide({
-                directory,
-                init: InstanceBootstrap,
+              return OntologySpaceContext.provide({
+                spaceID,
                 async fn() {
-                  return next()
+                  return Instance.provide({
+                    directory,
+                    init: InstanceBootstrap,
+                    async fn() {
+                      return next()
+                    },
+                  })
                 },
               })
             },
@@ -607,7 +614,9 @@ export namespace Server {
       await initOntology()
       log.info("ontology initialized")
     } catch (e) {
-      log.warn("ontology init failed — graph features unavailable", { error: e instanceof Error ? e.message : String(e) })
+      log.warn("ontology init failed — graph features unavailable", {
+        error: e instanceof Error ? e.message : String(e),
+      })
     }
 
     const args = {
