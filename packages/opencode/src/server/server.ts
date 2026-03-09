@@ -39,6 +39,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { websocket } from "hono/bun"
 import { HTTPException } from "hono/http-exception"
 import { errors } from "./error"
+import { Filesystem } from "@/util/filesystem"
 import { QuestionRoutes } from "./routes/question"
 import { PermissionRoutes } from "./routes/permission"
 import { GlobalRoutes } from "./routes/global"
@@ -201,13 +202,15 @@ export namespace Server {
           const workspaceID = c.req.query("workspace") || c.req.header("x-opencode-workspace")
           const spaceID = c.req.query("space") || c.req.header("x-opencode-space")
           const raw = c.req.query("directory") || c.req.header("x-opencode-directory") || process.cwd()
-          const directory = (() => {
-            try {
-              return decodeURIComponent(raw)
-            } catch {
-              return raw
-            }
-          })()
+          const directory = Filesystem.resolve(
+            (() => {
+              try {
+                return decodeURIComponent(raw)
+              } catch {
+                return raw
+              }
+            })(),
+          )
 
           return WorkspaceContext.provide({
             workspaceID,

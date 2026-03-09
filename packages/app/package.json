@@ -1,6 +1,6 @@
 {
   "name": "@opencode-ai/app",
-  "version": "1.2.16",
+  "version": "1.2.22",
   "description": "",
   "type": "module",
   "exports": {
@@ -58,7 +58,7 @@
     "diff": "catalog:",
     "force-graph": "1.51.1",
     "fuzzysort": "catalog:",
-    "ghostty-web": "0.4.0",
+    "ghostty-web": "github:anomalyco/ghostty-web#main",
     "luxon": "catalog:",
     "marked": "catalog:",
     "marked-shiki": "catalog:",

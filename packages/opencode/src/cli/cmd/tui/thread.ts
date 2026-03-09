@@ -112,12 +112,10 @@ export const TuiThreadCommand = cmd({
 
       // Resolve relative --project paths from PWD, then use the real cwd after
       // chdir so the thread and worker share the same directory key.
-      const root = Filesystem.normalizePath(path.resolve(process.env.PWD ?? process.cwd()))
+      const root = Filesystem.resolve(process.env.PWD ?? process.cwd())
       const next = args.project
-        ? Filesystem.normalizePath(
-            path.resolve(path.isAbsolute(args.project) ? args.project : path.join(root, args.project)),
-          )
-        : Filesystem.normalizePath(path.resolve(process.cwd()))
+        ? Filesystem.resolve(path.isAbsolute(args.project) ? args.project : path.join(root, args.project))
+        : Filesystem.resolve(process.cwd())
       const file = await target()
       try {
         process.chdir(next)
@@ -125,7 +123,7 @@ export const TuiThreadCommand = cmd({
         UI.error("Failed to change directory to " + next)
         return
       }
-      const cwd = Filesystem.normalizePath(path.resolve(process.cwd()))
+      const cwd = Filesystem.resolve(process.cwd())
 
       const worker = new Worker(file, {
         env: Object.fromEntries(
