@@ -13,7 +13,7 @@ import { Bus } from "@/bus"
 import { Session } from "@/session"
 import { Discovery } from "./discovery"
 import { Glob } from "../util/glob"
-
+import { OntologySpaceContext } from "@/ontology/space-context"
 export namespace Skill {
   const log = Log.create({ service: "skill" })
   export const Info = z.object({
@@ -175,15 +175,72 @@ export namespace Skill {
     }
   })
 
+  // -------------------------------------------------------------------
+  // Space-specific skill loading (separate cache, not tied to Instance)
+  // -------------------------------------------------------------------
+
+  const spaceCache = new Map<string, Promise<{ skills: Record<string, Info>; dirs: string[] }>>()
+
+  async function loadSpace(dir: string): Promise<{ skills: Record<string, Info>; dirs: string[] }> {
+    const skills: Record<string, Info> = {}
+    const found = new Set<string>()
+
+    const add = async (match: string) => {
+      const md = await ConfigMarkdown.parse(match).catch((err) => {
+        log.warn("failed to parse space skill", { skill: match, err })
+        return undefined
+      })
+      if (!md) return
+      const parsed = Info.pick({ name: true, description: true }).safeParse(md.data)
+      if (!parsed.success) return
+      found.add(path.dirname(match))
+      skills[parsed.data.name] = {
+        name: parsed.data.name,
+        description: parsed.data.description,
+        location: match,
+        content: md.content,
+      }
+    }
+
+    for (const pattern of [OPENCODE_SKILL_PATTERN, EXTERNAL_SKILL_PATTERN, SKILL_PATTERN]) {
+      const matches = await Glob.scan(pattern, {
+        cwd: dir,
+        absolute: true,
+        include: "file",
+        dot: true,
+        symlink: true,
+      }).catch(() => [])
+      for (const match of matches) await add(match)
+    }
+
+    return { skills, dirs: Array.from(found) }
+  }
+
+  async function forSpace(): Promise<{ skills: Record<string, Info>; dirs: string[] }> {
+    const dir = OntologySpaceContext.directory
+    if (!dir) return { skills: {}, dirs: [] }
+
+    let cached = spaceCache.get(dir)
+    if (!cached) {
+      cached = loadSpace(dir)
+      spaceCache.set(dir, cached)
+    }
+    return cached
+  }
+
   export async function get(name: string) {
+    const sp = await forSpace()
+    if (sp.skills[name]) return sp.skills[name]
     return state().then((x) => x.skills[name])
   }
 
   export async function all() {
-    return state().then((x) => Object.values(x.skills))
+    const [base, sp] = await Promise.all([state(), forSpace()])
+    return Object.values({ ...base.skills, ...sp.skills })
   }
 
   export async function dirs() {
-    return state().then((x) => x.dirs)
+    const [base, sp] = await Promise.all([state(), forSpace()])
+    return [...base.dirs, ...sp.dirs]
   }
 }

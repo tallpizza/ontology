@@ -1,6 +1,7 @@
 import { Ripgrep } from "../file/ripgrep"
 
 import { Instance } from "../project/instance"
+import { OntologySpaceContext } from "@/ontology/space-context"
 
 import PROMPT_ANTHROPIC from "./prompt/anthropic.txt"
 import PROMPT_ANTHROPIC_WITHOUT_TODO from "./prompt/qwen.txt"
@@ -26,8 +27,9 @@ export namespace SystemPrompt {
     return [PROMPT_ANTHROPIC_WITHOUT_TODO]
   }
 
-  export async function environment(model: Provider.Model) {
+  export async function environment(model: Provider.Model, input?: { spaceID?: string }) {
     const project = Instance.project
+    const space = input?.spaceID ?? OntologySpaceContext.spaceID
     return [
       [
         `You are powered by the model named ${model.api.id}. The exact model ID is ${model.providerID}/${model.api.id}`,
@@ -35,6 +37,8 @@ export namespace SystemPrompt {
         `<env>`,
         `  Working directory: ${Instance.directory}`,
         `  Is directory a git repo: ${project.vcs === "git" ? "yes" : "no"}`,
+        space ? `  Current space: ${space}` : "",
+        OntologySpaceContext.directory ? `  Space directory: ${OntologySpaceContext.directory}` : "",
         `  Platform: ${process.platform}`,
         `  Today's date: ${new Date().toDateString()}`,
         `</env>`,

@@ -8,7 +8,7 @@ import { Flag } from "@/flag/flag"
 import { Log } from "../util/log"
 import { Glob } from "../util/glob"
 import type { MessageV2 } from "./message-v2"
-
+import { OntologySpaceContext } from "@/ontology/space-context"
 const log = Log.create({ service: "instruction" })
 
 const FILES = [
@@ -89,6 +89,18 @@ export namespace InstructionPrompt {
       if (await Filesystem.exists(file)) {
         paths.add(path.resolve(file))
         break
+      }
+    }
+
+    // Space-specific instructions from .opencode/spaces/{spaceId}/
+    const spaceDir = OntologySpaceContext.directory
+    if (spaceDir) {
+      for (const file of FILES) {
+        const filepath = path.join(spaceDir, file)
+        if (await Filesystem.exists(filepath)) {
+          paths.add(path.resolve(filepath))
+          break
+        }
       }
     }
 

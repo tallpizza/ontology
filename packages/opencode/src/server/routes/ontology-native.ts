@@ -131,6 +131,7 @@ function getDb() {
 
     // Load persisted spaces
     _persistedSpaces = loadSpacesSnapshot(_db)
+    ensureAllSpaceFiles()
   }
   return _db
 }
@@ -147,15 +148,44 @@ const normalizeSpaceId = (value: unknown): string => {
 
 const resolveSpaceId = (value: unknown) => normalizeSpaceId(value)
 
+function resolveSpaceDir(spaceId: string) {
+  return path.resolve(process.cwd(), ".opencode", "spaces", spaceId)
+}
+
+function createSpaceAgents(spaceId: string) {
+  return [
+    `# Space: ${spaceId}`,
+    "",
+    "## Scope",
+    "",
+    "- This file contains instructions specific to this graph space.",
+    "- Put graph-domain rules here, not repository-wide development rules.",
+    "- Space-specific skills can live under `skills/` in this directory.",
+  ].join("\n")
+}
+
+function ensureSpaceFiles(spaceId: string) {
+  const dir = resolveSpaceDir(spaceId)
+  fs.mkdirSync(path.join(dir, "skills"), { recursive: true })
+  const agents = path.join(dir, "AGENTS.md")
+  if (!fs.existsSync(agents)) fs.writeFileSync(agents, createSpaceAgents(spaceId) + "\n")
+}
+
+function ensureAllSpaceFiles() {
+  const ids = new Set([DEFAULT_SPACE_ID, ...Object.keys(_persistedSpaces)])
+  for (const id of ids) ensureSpaceFiles(id)
+}
+
 // ---------------------------------------------------------------------------
 // SQLite persistence
 // ---------------------------------------------------------------------------
 
 function loadSpacesSnapshot(db: Database): Record<string, PersistedSession> {
   try {
-    const rows = db
-      .query("SELECT space_id as spaceId, payload FROM space_contexts")
-      .all() as Array<{ spaceId: string; payload: string }>
+    const rows = db.query("SELECT space_id as spaceId, payload FROM space_contexts").all() as Array<{
+      spaceId: string
+      payload: string
+    }>
     const result: Record<string, PersistedSession> = {}
     for (const row of rows) {
       try {
@@ -238,7 +268,10 @@ async function listSpaces(currentSpaceId: string): Promise<SpaceInfo[]> {
     for (const record of result.records) {
       const id = String(record.get("spaceId") ?? DEFAULT_SPACE_ID)
       const rawCount = record.get("nodeCount") as { toNumber?: () => number } | number | undefined
-      const nodeCount = typeof (rawCount as { toNumber?: () => number })?.toNumber === "function" ? (rawCount as { toNumber: () => number }).toNumber() : Number(rawCount ?? 0)
+      const nodeCount =
+        typeof (rawCount as { toNumber?: () => number })?.toNumber === "function"
+          ? (rawCount as { toNumber: () => number }).toNumber()
+          : Number(rawCount ?? 0)
       byId.set(id, { id, nodeCount, current: id === currentSpaceId })
       knownIds.add(id)
     }
@@ -322,285 +355,283 @@ const ZSpace = z.object({
 // Hono Routes
 // ---------------------------------------------------------------------------
 
-export const OntologyRoutes = lazy(
-  () =>
-    new Hono()
-      .get(
-        "/health",
-        describeRoute({
-          summary: "Ontology health check",
-          operationId: "ontology.health",
-          responses: {
-            200: {
-              description: "OK",
-              content: { "application/json": { schema: resolver(z.object({ ok: z.boolean() })) } },
-            },
+export const OntologyRoutes = lazy(() =>
+  new Hono()
+    .get(
+      "/health",
+      describeRoute({
+        summary: "Ontology health check",
+        operationId: "ontology.health",
+        responses: {
+          200: {
+            description: "OK",
+            content: { "application/json": { schema: resolver(z.object({ ok: z.boolean() })) } },
           },
-        }),
-        async (c) => {
-          // Quick Neo4j ping
-          try {
-            const session = getDriver().session()
-            try {
-              await session.run("RETURN 1")
-            } finally {
-              await session.close()
-            }
-            return c.json({ ok: true })
-          } catch (e) {
-            return c.json({ ok: false, error: e instanceof Error ? e.message : "neo4j unreachable" }, 503)
-          }
         },
-      )
+      }),
+      async (c) => {
+        // Quick Neo4j ping
+        try {
+          const session = getDriver().session()
+          try {
+            await session.run("RETURN 1")
+          } finally {
+            await session.close()
+          }
+          return c.json({ ok: true })
+        } catch (e) {
+          return c.json({ ok: false, error: e instanceof Error ? e.message : "neo4j unreachable" }, 503)
+        }
+      },
+    )
 
-      // ---- Spaces ----
-      .get(
-        "/spaces",
-        describeRoute({
-          summary: "List ontology spaces",
-          operationId: "ontology.spaces",
-          responses: {
-            200: {
-              description: "Ontology spaces",
-              content: {
-                "application/json": {
-                  schema: resolver(z.object({ currentSpaceId: z.string(), spaces: ZSpace.array() })),
-                },
+    // ---- Spaces ----
+    .get(
+      "/spaces",
+      describeRoute({
+        summary: "List ontology spaces",
+        operationId: "ontology.spaces",
+        responses: {
+          200: {
+            description: "Ontology spaces",
+            content: {
+              "application/json": {
+                schema: resolver(z.object({ currentSpaceId: z.string(), spaces: ZSpace.array() })),
               },
             },
           },
-        }),
-        validator("query", z.object({ spaceId: z.string().optional() })),
-        async (c) => {
-          const spaceId = resolveSpaceId(c.req.valid("query").spaceId)
-          try {
-            const spacesList = await listSpaces(spaceId)
-            return c.json({ currentSpaceId: spaceId, spaces: spacesList })
-          } catch (e) {
-            return c.json({ error: e instanceof Error ? e.message : "Failed to list spaces" }, 500)
-          }
         },
-      )
-
-      .post(
-        "/spaces",
-        describeRoute({
-          summary: "Create ontology space",
-          operationId: "ontology.spaces.create",
-          responses: {
-            200: {
-              description: "Space created",
-              content: {
-                "application/json": {
-                  schema: resolver(
-                    z.object({ ok: z.boolean(), currentSpaceId: z.string(), spaces: ZSpace.array() }),
-                  ),
-                },
-              },
-            },
-          },
-        }),
-        validator("json", z.object({ spaceId: z.string() })),
-        async (c) => {
-          const spaceId = resolveSpaceId(c.req.valid("json").spaceId)
-          if (!spaceId) return c.json({ error: "spaceId is required" }, 400)
-
-          const db = getDb()
-          // Ensure persisted entry exists
-          if (!_persistedSpaces[spaceId]) {
-            const payload: PersistedSession = {
-              spaceId,
-              skills: [],
-              heartbeat: "",
-              basePrompt: "",
-              memory: [],
-              modelId: "",
-              chatHistory: [],
-              archives: [],
-              threadId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-              threadStartedAt: new Date().toISOString(),
-            }
-            saveSpaceToDb(db, spaceId, payload)
-            _persistedSpaces[spaceId] = payload
-          }
-
+      }),
+      validator("query", z.object({ spaceId: z.string().optional() })),
+      async (c) => {
+        const spaceId = resolveSpaceId(c.req.valid("query").spaceId)
+        try {
           const spacesList = await listSpaces(spaceId)
-          return c.json({ ok: true, currentSpaceId: spaceId, spaces: spacesList })
-        },
-      )
+          return c.json({ currentSpaceId: spaceId, spaces: spacesList })
+        } catch (e) {
+          return c.json({ error: e instanceof Error ? e.message : "Failed to list spaces" }, 500)
+        }
+      },
+    )
 
-      .delete(
-        "/spaces/:name",
-        describeRoute({
-          summary: "Delete ontology space",
-          operationId: "ontology.spaces.delete",
-          responses: {
-            200: {
-              description: "Space deleted",
-              content: { "application/json": { schema: resolver(z.object({ ok: z.boolean() })) } },
+    .post(
+      "/spaces",
+      describeRoute({
+        summary: "Create ontology space",
+        operationId: "ontology.spaces.create",
+        responses: {
+          200: {
+            description: "Space created",
+            content: {
+              "application/json": {
+                schema: resolver(z.object({ ok: z.boolean(), currentSpaceId: z.string(), spaces: ZSpace.array() })),
+              },
             },
           },
-        }),
-        async (c) => {
-          const name = c.req.param("name")
-          const spaceId = resolveSpaceId(name)
-
-          try {
-            // Delete graph data
-            await clearGraphForSpace(spaceId)
-
-            // Delete from SQLite
-            const db = getDb()
-            deleteSpaceFromDb(db, spaceId)
-            delete _persistedSpaces[spaceId]
-
-            return c.json({ ok: true })
-          } catch (e) {
-            return c.json({ error: e instanceof Error ? e.message : "Failed to delete space" }, 500)
-          }
         },
-      )
+      }),
+      validator("json", z.object({ spaceId: z.string() })),
+      async (c) => {
+        const spaceId = resolveSpaceId(c.req.valid("json").spaceId)
+        if (!spaceId) return c.json({ error: "spaceId is required" }, 400)
 
-      // ---- Graph ----
-      .get(
-        "/graph",
-        describeRoute({
-          summary: "Get ontology graph",
-          operationId: "ontology.graph",
-          responses: {
-            200: {
-              description: "Graph data",
-              content: { "application/json": { schema: resolver(ZGraphPayload) } },
-            },
+        const db = getDb()
+        // Ensure persisted entry exists
+        if (!_persistedSpaces[spaceId]) {
+          const payload: PersistedSession = {
+            spaceId,
+            skills: [],
+            heartbeat: "",
+            basePrompt: "",
+            memory: [],
+            modelId: "",
+            chatHistory: [],
+            archives: [],
+            threadId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+            threadStartedAt: new Date().toISOString(),
+          }
+          saveSpaceToDb(db, spaceId, payload)
+          _persistedSpaces[spaceId] = payload
+        }
+        ensureSpaceFiles(spaceId)
+
+        const spacesList = await listSpaces(spaceId)
+        return c.json({ ok: true, currentSpaceId: spaceId, spaces: spacesList })
+      },
+    )
+
+    .delete(
+      "/spaces/:name",
+      describeRoute({
+        summary: "Delete ontology space",
+        operationId: "ontology.spaces.delete",
+        responses: {
+          200: {
+            description: "Space deleted",
+            content: { "application/json": { schema: resolver(z.object({ ok: z.boolean() })) } },
           },
-        }),
-        validator("query", z.object({ spaceId: z.string().optional() })),
-        async (c) => {
-          const spaceId = resolveSpaceId(c.req.valid("query").spaceId)
-          try {
-            const graph = await loadGraphData(spaceId)
-            return c.json(graph)
-          } catch (e) {
-            return c.json({ error: e instanceof Error ? e.message : "Failed to load graph" }, 500)
-          }
         },
-      )
+      }),
+      async (c) => {
+        const name = c.req.param("name")
+        const spaceId = resolveSpaceId(name)
 
-      // ---- RPC (data-layer methods only) ----
-      .post(
-        "/rpc",
-        describeRoute({
-          summary: "Ontology RPC",
-          operationId: "ontology.rpc",
-          responses: {
-            200: {
-              description: "RPC result",
-              content: { "application/json": { schema: resolver(z.object({ result: z.unknown() })) } },
-            },
+        try {
+          // Delete graph data
+          await clearGraphForSpace(spaceId)
+
+          // Delete from SQLite
+          const db = getDb()
+          deleteSpaceFromDb(db, spaceId)
+          delete _persistedSpaces[spaceId]
+
+          return c.json({ ok: true })
+        } catch (e) {
+          return c.json({ error: e instanceof Error ? e.message : "Failed to delete space" }, 500)
+        }
+      },
+    )
+
+    // ---- Graph ----
+    .get(
+      "/graph",
+      describeRoute({
+        summary: "Get ontology graph",
+        operationId: "ontology.graph",
+        responses: {
+          200: {
+            description: "Graph data",
+            content: { "application/json": { schema: resolver(ZGraphPayload) } },
           },
-        }),
-        validator(
-          "json",
-          z.object({
-            method: z.string(),
-            params: z.record(z.string(), z.unknown()).optional(),
-          }),
-        ),
-        async (c) => {
-          const { method, params = {} } = c.req.valid("json")
-
-          const inferErrorCode = (rpcMethod: string, error: unknown) => {
-            if (rpcMethod !== "graph.get") return "INTERNAL_ERROR"
-            const message = error instanceof Error ? error.message : String(error)
-            if (/unauthorized|incorrect authentication/i.test(message)) return "NEO4J_AUTH_FAILED"
-            if (
-              /failed to connect|econnreset|econnrefused|serviceunavailable|could not perform discovery/i.test(
-                message.toLowerCase(),
-              )
-            )
-              return "NEO4J_UNAVAILABLE"
-            return "INTERNAL_ERROR"
-          }
-
-          try {
-            if (method === "graph.get") {
-              const spaceId = resolveSpaceId(params.spaceId)
-              const graph = await loadGraphData(spaceId)
-              return c.json({ result: graph })
-            }
-
-            if (method === "cypher.execute") {
-              const spaceId = resolveSpaceId(params.spaceId)
-              const query = typeof params.query === "string" ? params.query : ""
-              if (!query) return c.json({ error: { code: "BAD_REQUEST", message: "query is required" } }, 400)
-              const cypherParams = (params.params ?? {}) as Record<string, unknown>
-              const rows = await executeCypher(spaceId, query, cypherParams)
-              return c.json({ result: { rows, count: rows.length } })
-            }
-
-            if (method === "space.clear") {
-              const spaceId = resolveSpaceId(params.spaceId)
-              const targetRaw =
-                typeof params.target === "string" ? (params.target as string).trim().toLowerCase() : "chat"
-              type ClearTarget = "chat" | "memory" | "graph" | "all"
-              const target: ClearTarget =
-                targetRaw === "memory" || targetRaw === "graph" || targetRaw === "all" ? targetRaw : "chat"
-
-              if (target === "graph" || target === "all") {
-                await clearGraphForSpace(spaceId)
-              }
-
-              // Clear persisted data
-              const db = getDb()
-              const existing = _persistedSpaces[spaceId]
-              if (existing) {
-                const next: PersistedSession = {
-                  ...existing,
-                  memory: target === "memory" || target === "all" ? [] : existing.memory,
-                  chatHistory: target === "chat" || target === "all" ? [] : existing.chatHistory,
-                }
-                saveSpaceToDb(db, spaceId, next)
-                _persistedSpaces[spaceId] = next
-              }
-
-              const graph = await loadGraphData(spaceId)
-              return c.json({
-                result: {
-                  ok: true,
-                  spaceId,
-                  target,
-                  graph,
-                  skills: existing?.skills ?? [],
-                  heartbeat: existing?.heartbeat ?? "",
-                  memory: target === "memory" || target === "all" ? [] : (existing?.memory ?? []),
-                },
-              })
-            }
-
-            if (method === "space.context") {
-              const spaceId = resolveSpaceId(params.spaceId)
-              const persisted = _persistedSpaces[spaceId]
-              return c.json({
-                result: {
-                  spaceId,
-                  current: persisted?.chatHistory ?? [],
-                  archives: persisted?.archives ?? [],
-                  skills: persisted?.skills ?? [],
-                  heartbeat: persisted?.heartbeat ?? "",
-                  memory: persisted?.memory ?? [],
-                  threadId: persisted?.threadId ?? "",
-                  modelId: persisted?.modelId ?? "",
-                },
-              })
-            }
-
-            return c.json({ error: { code: "METHOD_NOT_FOUND", message: `Unknown method: ${method}` } }, 404)
-          } catch (e) {
-            const code = inferErrorCode(method, e)
-            return c.json({ error: { code, message: e instanceof Error ? e.message : "rpc failed" } }, 500)
-          }
         },
+      }),
+      validator("query", z.object({ spaceId: z.string().optional() })),
+      async (c) => {
+        const spaceId = resolveSpaceId(c.req.valid("query").spaceId)
+        try {
+          const graph = await loadGraphData(spaceId)
+          return c.json(graph)
+        } catch (e) {
+          return c.json({ error: e instanceof Error ? e.message : "Failed to load graph" }, 500)
+        }
+      },
+    )
+
+    // ---- RPC (data-layer methods only) ----
+    .post(
+      "/rpc",
+      describeRoute({
+        summary: "Ontology RPC",
+        operationId: "ontology.rpc",
+        responses: {
+          200: {
+            description: "RPC result",
+            content: { "application/json": { schema: resolver(z.object({ result: z.unknown() })) } },
+          },
+        },
+      }),
+      validator(
+        "json",
+        z.object({
+          method: z.string(),
+          params: z.record(z.string(), z.unknown()).optional(),
+        }),
       ),
+      async (c) => {
+        const { method, params = {} } = c.req.valid("json")
+
+        const inferErrorCode = (rpcMethod: string, error: unknown) => {
+          if (rpcMethod !== "graph.get") return "INTERNAL_ERROR"
+          const message = error instanceof Error ? error.message : String(error)
+          if (/unauthorized|incorrect authentication/i.test(message)) return "NEO4J_AUTH_FAILED"
+          if (
+            /failed to connect|econnreset|econnrefused|serviceunavailable|could not perform discovery/i.test(
+              message.toLowerCase(),
+            )
+          )
+            return "NEO4J_UNAVAILABLE"
+          return "INTERNAL_ERROR"
+        }
+
+        try {
+          if (method === "graph.get") {
+            const spaceId = resolveSpaceId(params.spaceId)
+            const graph = await loadGraphData(spaceId)
+            return c.json({ result: graph })
+          }
+
+          if (method === "cypher.execute") {
+            const spaceId = resolveSpaceId(params.spaceId)
+            const query = typeof params.query === "string" ? params.query : ""
+            if (!query) return c.json({ error: { code: "BAD_REQUEST", message: "query is required" } }, 400)
+            const cypherParams = (params.params ?? {}) as Record<string, unknown>
+            const rows = await executeCypher(spaceId, query, cypherParams)
+            return c.json({ result: { rows, count: rows.length } })
+          }
+
+          if (method === "space.clear") {
+            const spaceId = resolveSpaceId(params.spaceId)
+            const targetRaw =
+              typeof params.target === "string" ? (params.target as string).trim().toLowerCase() : "chat"
+            type ClearTarget = "chat" | "memory" | "graph" | "all"
+            const target: ClearTarget =
+              targetRaw === "memory" || targetRaw === "graph" || targetRaw === "all" ? targetRaw : "chat"
+
+            if (target === "graph" || target === "all") {
+              await clearGraphForSpace(spaceId)
+            }
+
+            // Clear persisted data
+            const db = getDb()
+            const existing = _persistedSpaces[spaceId]
+            if (existing) {
+              const next: PersistedSession = {
+                ...existing,
+                memory: target === "memory" || target === "all" ? [] : existing.memory,
+                chatHistory: target === "chat" || target === "all" ? [] : existing.chatHistory,
+              }
+              saveSpaceToDb(db, spaceId, next)
+              _persistedSpaces[spaceId] = next
+            }
+
+            const graph = await loadGraphData(spaceId)
+            return c.json({
+              result: {
+                ok: true,
+                spaceId,
+                target,
+                graph,
+                skills: existing?.skills ?? [],
+                heartbeat: existing?.heartbeat ?? "",
+                memory: target === "memory" || target === "all" ? [] : (existing?.memory ?? []),
+              },
+            })
+          }
+
+          if (method === "space.context") {
+            const spaceId = resolveSpaceId(params.spaceId)
+            const persisted = _persistedSpaces[spaceId]
+            return c.json({
+              result: {
+                spaceId,
+                current: persisted?.chatHistory ?? [],
+                archives: persisted?.archives ?? [],
+                skills: persisted?.skills ?? [],
+                heartbeat: persisted?.heartbeat ?? "",
+                memory: persisted?.memory ?? [],
+                threadId: persisted?.threadId ?? "",
+                modelId: persisted?.modelId ?? "",
+              },
+            })
+          }
+
+          return c.json({ error: { code: "METHOD_NOT_FOUND", message: `Unknown method: ${method}` } }, 404)
+        } catch (e) {
+          const code = inferErrorCode(method, e)
+          return c.json({ error: { code, message: e instanceof Error ? e.message : "rpc failed" } }, 500)
+        }
+      },
+    ),
 )
 
 // ---------------------------------------------------------------------------
