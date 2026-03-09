@@ -15,12 +15,28 @@ export type OntologyGraph = {
 
 const STORAGE_KEY = "opencode.ontology.space"
 
+const readURLSpace = () => {
+  if (typeof window === "undefined") return undefined
+  return new URL(window.location.href).searchParams.get("space") ?? undefined
+}
+
+const syncURLSpace = (space: string) => {
+  if (typeof window === "undefined") return
+  const url = new URL(window.location.href)
+  if (url.searchParams.get("space") === space) return
+  url.searchParams.set("space", space)
+  const query = url.searchParams.toString()
+  const href = `${url.pathname}${query ? `?${query}` : ""}${url.hash}`
+  window.history.replaceState(window.history.state, "", href)
+}
+
 export const { use: useOntology, provider: OntologyProvider } = createSimpleContext({
   name: "Ontology",
   init: () => {
     const [spaces, setSpaces] = createSignal<OntologySpace[]>([])
     const [spaceID, setSpaceID] = createSignal<string>(
-      typeof localStorage === "undefined" ? "default" : localStorage.getItem(STORAGE_KEY) || "default",
+      readURLSpace() ??
+        (typeof localStorage === "undefined" ? "default" : localStorage.getItem(STORAGE_KEY) || "default"),
     )
     const [graph, setGraph] = createSignal<OntologyGraph>({ nodes: [], links: [] })
     const [loading, setLoading] = createSignal(false)
@@ -35,6 +51,7 @@ export const { use: useOntology, provider: OntologyProvider } = createSimpleCont
     const saveSpace = (next: string) => {
       setSpaceID(next)
       if (typeof localStorage !== "undefined") localStorage.setItem(STORAGE_KEY, next)
+      syncURLSpace(next)
     }
 
     const fetchSpaces = async () => {
@@ -78,6 +95,22 @@ export const { use: useOntology, provider: OntologyProvider } = createSimpleCont
       }
     }
 
+    const deleteSpace = async (target: string) => {
+      const res = await fetch(`${apiBase()}/spaces/${encodeURIComponent(target)}`, { method: "DELETE" })
+      if (!res.ok) throw new Error(`delete space ${res.status}`)
+      const fallback = target === spaceID() ? "default" : spaceID()
+      saveSpace(fallback)
+      setLoading(true)
+      setError(undefined)
+      try {
+        await Promise.all([fetchSpaces(), fetchGraph(fallback)])
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "ontology delete failed")
+      } finally {
+        setLoading(false)
+      }
+    }
+
     // Auto-fetch on mount
     void refresh()
 
@@ -89,6 +122,7 @@ export const { use: useOntology, provider: OntologyProvider } = createSimpleCont
       error,
       refresh,
       selectSpace,
+      deleteSpace,
     }
   },
 })

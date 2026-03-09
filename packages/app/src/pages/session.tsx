@@ -41,7 +41,7 @@ import { MessageTimeline } from "@/pages/session/message-timeline"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
 import { SessionComposerRegion, createSessionComposerState } from "@/pages/session/composer"
 import { SessionMobileTabs } from "@/pages/session/session-mobile-tabs"
-import { SessionSidePanel, OntologyGraphPanel } from "@/pages/session/session-side-panel"
+import { OntologyGraphPanel } from "@/pages/session/session-side-panel"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
 
 const emptyUserMessages: UserMessage[] = []
@@ -322,13 +322,12 @@ export default function Page() {
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
-  const desktopSidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFileTreeOpen())
-  const sessionPanelWidth = createMemo(() => {
-    if (!desktopSidePanelOpen()) return "100%"
-    if (desktopReviewOpen()) return `${layout.session.width()}px`
-    return `calc(100% - ${layout.fileTree.width()}px)`
-  })
-  const centered = createMemo(() => isDesktop() && !desktopReviewOpen())
+  // Ontology: always show graph panel on desktop
+  const desktopSidePanelOpen = createMemo(() => isDesktop())
+  const sessionPanelWidth = createMemo(() =>
+    desktopSidePanelOpen() ? `${layout.session.width()}px` : "100%"
+  )
+  const centered = createMemo(() => isDesktop())
 
   function normalizeTab(tab: string) {
     if (!tab.startsWith("file://")) return tab
@@ -1261,7 +1260,7 @@ export default function Page() {
             }}
           />
 
-          <Show when={desktopReviewOpen()}>
+          <Show when={desktopSidePanelOpen()}>
             <ResizeHandle
               direction="horizontal"
               size={layout.session.width()}
@@ -1272,7 +1271,11 @@ export default function Page() {
           </Show>
         </div>
 
-        <SessionSidePanel reviewPanel={reviewPanel} activeDiff={tree.activeDiff} focusReviewDiff={focusReviewDiff} />
+        <Show when={desktopSidePanelOpen()}>
+          <aside class="flex-1 min-w-0 min-h-0 h-full overflow-hidden bg-background-base">
+            <OntologyGraphPanel />
+          </aside>
+        </Show>
       </div>
 
       <TerminalPanel />
