@@ -1767,7 +1767,11 @@ export default function Layout(props: ParentProps) {
           "max-w-full overflow-hidden": panelProps.mobile,
         }}
         style={{
-          width: panelProps.mobile ? undefined : `${Math.max(Math.max(layout.sidebar.width(), 244) - 64, 0)}px`,
+          width: panelProps.mobile
+            ? undefined
+            : panelProps.merged === false
+              ? `${Math.max(Math.max(layout.sidebar.width(), 244) - 64, 0)}px`
+              : `${Math.max(layout.sidebar.width(), 244)}px`,
         }}
       >
         <Show when={panelProps.project}>
@@ -1941,7 +1945,7 @@ export default function Layout(props: ParentProps) {
               !sizing(),
           }}
           style={{
-            "--main-left": layout.sidebar.opened() ? `${Math.max(layout.sidebar.width(), 244)}px` : "4rem",
+            "--main-left": layout.sidebar.opened() ? `${Math.max(layout.sidebar.width(), 244)}px` : "0px",
           }}
         >
           <main

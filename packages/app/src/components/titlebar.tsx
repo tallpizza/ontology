@@ -164,7 +164,7 @@ export function Titlebar() {
       <div
         classList={{
           "flex items-center min-w-0": true,
-          "pl-2": !mac(),
+          "pl-1": !mac(),
         }}
       >
         <Show when={mac()}>
@@ -194,7 +194,7 @@ export function Titlebar() {
         </Show>
         <div class="flex items-center gap-1 shrink-0">
           <TooltipKeybind
-            class={web() ? "hidden xl:flex shrink-0 ml-14" : "hidden xl:flex shrink-0 ml-2"}
+            class="hidden xl:flex shrink-0"
             placement="bottom"
             title={language.t("command.sidebar.toggle")}
             keybind={command.keybind("sidebar.toggle")}
