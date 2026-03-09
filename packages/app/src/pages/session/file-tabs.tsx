@@ -468,8 +468,9 @@ export function FileTabContent(props: { tab: string }) {
                 <For each={data.nodes.slice(0, 80)}>
                   {(node) => (
                     <div class="border-b border-border-weak-base/60 px-2 py-1.5 text-12-regular last:border-b-0">
-                      <div class="truncate text-text-base">{node.label ?? "Entity"}: {node.name ?? node.id}</div>
-                      <div class="truncate text-11 text-text-weak">{node.sourceSystem ?? "unknown"} / {node.sourceRef ?? "unknown"}</div>
+                      <div class="truncate text-text-base">
+                        {node.label ?? "Entity"}: {node.name ?? node.id}
+                      </div>
                     </div>
                   )}
                 </For>

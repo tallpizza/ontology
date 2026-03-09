@@ -496,10 +496,9 @@ export function OntologyGraphPanel() {
         .height(viewport().height)
         .backgroundColor("transparent")
         .nodeLabel((node: any) => {
-          const n = node as { name?: string; label?: string; sourceSystem?: string; sourceRef?: string }
+          const n = node as { name?: string; label?: string }
           return `<div style="font-size:11px;padding:4px 8px;background:rgba(0,0,0,0.85);color:#fff;border-radius:6px;max-width:240px">
             <div><b>${n.label ?? "Entity"}</b>: ${n.name ?? "?"}</div>
-            <div style="opacity:0.7;margin-top:2px">${n.sourceSystem ?? "?"} / ${n.sourceRef ?? "?"}</div>
           </div>`
         })
         .nodeCanvasObject((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {

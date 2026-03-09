@@ -9,7 +9,7 @@ export type OntologySpace = {
 }
 
 export type OntologyGraph = {
-  nodes: Array<{ id: string; name?: string; label?: string; sourceSystem?: string; sourceRef?: string }>
+  nodes: Array<{ id: string; name?: string; label?: string }>
   links: Array<{ id: string; source: string; target: string; type?: string }>
 }
 

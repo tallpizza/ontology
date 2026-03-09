@@ -26,8 +26,6 @@ type GraphNode = {
   id: string
   name: string
   label: string
-  sourceSystem: string
-  sourceRef: string
   properties: Record<string, unknown>
 }
 
@@ -203,15 +201,11 @@ async function loadGraphData(spaceId: string): Promise<{ nodes: GraphNode[]; lin
       const props = record.get("props") as Record<string, unknown>
       const labels = (record.get("labels") as string[]) ?? []
       const name = typeof props.name === "string" ? props.name : String(record.get("id"))
-      const sourceSystem = typeof props.sourceSystem === "string" ? props.sourceSystem : "unknown"
-      const sourceRef = typeof props.sourceRef === "string" ? props.sourceRef : "unknown"
 
       return {
         id: String(record.get("id")),
         name,
         label: labels[0] ?? "Entity",
-        sourceSystem,
-        sourceRef,
         properties: props,
       }
     })
@@ -303,8 +297,6 @@ const ZGraphNode = z.object({
   id: z.string(),
   name: z.string().optional(),
   label: z.string().optional(),
-  sourceSystem: z.string().optional(),
-  sourceRef: z.string().optional(),
   properties: z.record(z.string(), z.unknown()).optional(),
 })
 
