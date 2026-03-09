@@ -1,4 +1,15 @@
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
+import {
+  For,
+  Match,
+  Show,
+  Switch,
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+  type JSX,
+} from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { useParams } from "@solidjs/router"
@@ -415,10 +426,20 @@ export function SessionSidePanel(props: {
                   />
                 </Tabs.Content>
                 <Tabs.Content value="spaces" class="bg-background-stronger px-3 py-2 overflow-y-auto">
-                  <Show when={!ontology.error()} fallback={<div class="px-2 py-2 text-12-regular text-danger-base">{ontology.error()}</div>}>
-                    <Show when={!ontology.loading()} fallback={<div class="px-2 py-2 text-12-regular text-text-weak">Loading spaces...</div>}>
+                  <Show
+                    when={!ontology.error()}
+                    fallback={<div class="px-2 py-2 text-12-regular text-danger-base">{ontology.error()}</div>}
+                  >
+                    <Show
+                      when={!ontology.loading()}
+                      fallback={<div class="px-2 py-2 text-12-regular text-text-weak">Loading spaces...</div>}
+                    >
                       <div class="flex flex-col gap-1.5">
-                        <For each={ontology.spaces().length ? ontology.spaces() : [{ id: ontology.spaceID(), nodeCount: 0 }]}> 
+                        <For
+                          each={
+                            ontology.spaces().length ? ontology.spaces() : [{ id: ontology.spaceID(), nodeCount: 0 }]
+                          }
+                        >
                           {(space) => (
                             <button
                               type="button"
@@ -458,7 +479,6 @@ export function SessionSidePanel(props: {
     </Show>
   )
 }
-
 
 export function OntologyGraphPanel() {
   const ontology = useOntology()

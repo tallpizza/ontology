@@ -456,11 +456,25 @@ export function FileTabContent(props: { tab: string }) {
           <div class="text-12-medium text-text-base">Ontology Graph</div>
           <div class="text-11 text-text-weak">space: {ontology.spaceID()}</div>
         </div>
-        <Show when={!ontology.error()} fallback={<div class="rounded-md border border-danger-base/40 bg-danger-surface px-3 py-2 text-12-regular text-danger-base">{ontology.error()}</div>}>
-          <Show when={!ontology.loading()} fallback={<div class="text-12-regular text-text-weak">Loading graph...</div>}>
+        <Show
+          when={!ontology.error()}
+          fallback={
+            <div class="rounded-md border border-danger-base/40 bg-danger-surface px-3 py-2 text-12-regular text-danger-base">
+              {ontology.error()}
+            </div>
+          }
+        >
+          <Show
+            when={!ontology.loading()}
+            fallback={<div class="text-12-regular text-text-weak">Loading graph...</div>}
+          >
             <div class="grid grid-cols-2 gap-2 mb-3">
-              <div class="rounded-md border border-border-weak-base px-2 py-1.5 text-11 text-text-weak">Nodes: {data.nodes.length}</div>
-              <div class="rounded-md border border-border-weak-base px-2 py-1.5 text-11 text-text-weak">Links: {data.links.length}</div>
+              <div class="rounded-md border border-border-weak-base px-2 py-1.5 text-11 text-text-weak">
+                Nodes: {data.nodes.length}
+              </div>
+              <div class="rounded-md border border-border-weak-base px-2 py-1.5 text-11 text-text-weak">
+                Links: {data.links.length}
+              </div>
             </div>
             <div class="rounded-md border border-border-weak-base">
               <div class="border-b border-border-weak-base px-2 py-1.5 text-11 text-text-weak">Recent Nodes</div>
