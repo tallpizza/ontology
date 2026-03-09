@@ -1,4 +1,5 @@
 import {
+  batch,
   onCleanup,
   Show,
   Match,
@@ -415,7 +416,11 @@ export default function Page() {
         if (!prev) return
         if (next.dir === prev.dir && next.id === prev.id) return
         if (prev.id) sync.session.evict(prev.id, prev.dir)
-        if (!next.id) resetSessionModel(local)
+        if (next.id) return
+        batch(() => {
+          local.agent.set(undefined)
+          local.model.set(undefined)
+        })
       },
       { defer: true },
     ),
