@@ -649,10 +649,16 @@ export namespace SessionPrompt {
       await Plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
 
       // Build system prompt, adding structured output instruction if needed
-      const system = [...(await SystemPrompt.environment(model)), ...(await InstructionPrompt.system())]
+      const system = [
+        ...(await SystemPrompt.environment(model, { spaceID: session.workspaceID ?? "default" })),
+        ...(await InstructionPrompt.system()),
+      ]
       const format = lastUser.format ?? { type: "text" }
       if (format.type === "json_schema") {
         system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+      }
+      if (isLastStep) {
+        system.push(MAX_STEPS)
       }
 
       const result = await processor.process({
@@ -661,17 +667,7 @@ export namespace SessionPrompt {
         abort,
         sessionID,
         system,
-        messages: [
-          ...MessageV2.toModelMessages(msgs, model),
-          ...(isLastStep
-            ? [
-                {
-                  role: "assistant" as const,
-                  content: MAX_STEPS,
-                },
-              ]
-            : []),
-        ],
+        messages: MessageV2.toModelMessages(msgs, model),
         tools,
         model,
         toolChoice: format.type === "json_schema" ? "required" : undefined,
